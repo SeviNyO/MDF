@@ -29,6 +29,7 @@ import { renderChapterHtml } from "../core/md2html.mjs";
 import { parsePdfWords } from "../core/pdf-words.mjs";
 import { copyImageToAssets } from "../core/image-assets.mjs";
 import { buildOutline } from "../core/outline.mjs";
+import { resolveShell } from "../core/shell.mjs";
 import { DEFAULT_DOCUMENT_THEME, listDocumentThemes, selectDocumentTheme, createDocumentTheme, deleteDocumentTheme, tableColors } from "../core/document-themes.mjs";
 
 const execAsync = promisify(exec);
@@ -67,7 +68,7 @@ const state = {
   compiling: null,
   dirty: false,
   watcher: null,
-  pty: null,
+  ptys: new Map(),
   termOpen: false,
 };
 
@@ -341,38 +342,51 @@ ipcMain.handle("fs:openFolder", async (_event, rel = "") => {
 
 // --- terminal ---------------------------------------------------------------
 
-function stopTerminal() {
-  if (!state.pty) return;
+function stopTerminal(id) {
+  const terminal = state.ptys.get(id);
+  if (!terminal) return false;
   try {
-    state.pty.kill("SIGHUP");
+    terminal.kill("SIGHUP");
   } catch {
     // ya terminó
   }
-  state.pty = null;
+  state.ptys.delete(id);
+  return true;
 }
 
-function startTerminal(cols = 80, rows = 24) {
-  stopTerminal();
+function stopAllTerminals() {
+  for (const id of [...state.ptys.keys()]) stopTerminal(id);
+}
+
+function startTerminal(id, cols = 80, rows = 24) {
+  if (!id) return false;
+  stopTerminal(id);
   if (!state.root) return false;
 
-  const shell = process.env.SHELL || "/bin/bash";
-  const terminal = pty.spawn(shell, [], {
-    name: "xterm-256color",
-    cols: Math.max(20, Number(cols) || 80),
-    rows: Math.max(5, Number(rows) || 24),
-    cwd: state.root,
-    env: {
-      ...process.env,
-      TERM: "xterm-256color",
-      COLORTERM: "truecolor",
-    },
-  });
+  const shellPath = resolveShell();
+  let terminal;
+  try {
+    terminal = pty.spawn(shellPath, [], {
+      name: "xterm-256color",
+      cols: Math.max(20, Number(cols) || 80),
+      rows: Math.max(5, Number(rows) || 24),
+      cwd: state.root,
+      env: {
+        ...process.env,
+        TERM: "xterm-256color",
+        COLORTERM: "truecolor",
+      },
+    });
+  } catch (error) {
+    throw new Error(`No se pudo iniciar la terminal (${shellPath}): ${error.message}`);
+  }
 
-  state.pty = terminal;
-  terminal.onData((data) => send("term:data", data));
+  state.ptys.set(id, terminal);
+  terminal.onData((data) => send("term:data", { id, data }));
   terminal.onExit(() => {
-    state.pty = null;
-    send("term:exit");
+    if (state.ptys.get(id) !== terminal) return;
+    state.ptys.delete(id);
+    send("term:exit", { id });
   });
 
   return true;
@@ -411,6 +425,7 @@ function createWindow() {
     minHeight: 680,
     backgroundColor: "#eef1f5",
     show: true,
+    autoHideMenuBar: true,
     title: "MDF — Markdown a PDF",
     icon: path.join(__dirname, "renderer", "assets", "logo-mark.png"),
     webPreferences: {
@@ -601,6 +616,41 @@ function registerIpc() {
     return true;
   });
 
+  ipcMain.handle("app:edit", (_event, action) => {
+    const contents = state.win?.webContents;
+    const method = {
+      undo: "undo",
+      redo: "redo",
+      cut: "cut",
+      copy: "copy",
+      paste: "paste",
+      "select-all": "selectAll",
+    }[action];
+    if (!contents || !method) return false;
+    contents[method]();
+    return true;
+  });
+
+  ipcMain.handle("app:quit", () => {
+    app.quit();
+    return true;
+  });
+
+  ipcMain.handle("app:about", async () => {
+    await dialog.showMessageBox(state.win, {
+      type: "info",
+      title: "MDF",
+      message: `MDF ${app.getVersion()}`,
+      detail: "Editor de Markdown con vista A4 paginada, modo lectura y exportación a PDF, HTML y DOCX.",
+    });
+    return true;
+  });
+
+  ipcMain.handle("app:toggleDevTools", () => {
+    state.win?.webContents.toggleDevTools();
+    return true;
+  });
+
   ipcMain.handle("project:open", async () => {
     const result = await dialog.showOpenDialog(state.win, {
       title: "Abrir carpeta",
@@ -616,7 +666,6 @@ function registerIpc() {
     const created = scaffold(dir);
     writeSettings({ lastProject: dir });
     watchProject();
-    if (state.termOpen) startTerminal();
     return { ...projectInfo(dir), created };
   });
 
@@ -749,20 +798,22 @@ function registerIpc() {
     }
   });
 
-  ipcMain.handle("term:start", (_event, cols, rows) => {
+  ipcMain.handle("term:start", (_event, id, cols, rows) => {
     state.termOpen = true;
-    return startTerminal(cols, rows);
+    return startTerminal(id, cols, rows);
   });
 
-  ipcMain.handle("term:restart", (_event, cols, rows) => startTerminal(cols, rows));
+  ipcMain.handle("term:restart", (_event, id, cols, rows) => startTerminal(id, cols, rows));
 
-  ipcMain.on("term:input", (_event, data) => {
-    state.pty?.write(String(data));
+  ipcMain.handle("term:close", (_event, id) => stopTerminal(id));
+
+  ipcMain.on("term:input", (_event, id, data) => {
+    state.ptys.get(id)?.write(String(data));
   });
 
-  ipcMain.on("term:resize", (_event, cols, rows) => {
+  ipcMain.on("term:resize", (_event, id, cols, rows) => {
     try {
-      state.pty?.resize(Math.max(20, Number(cols) || 80), Math.max(5, Number(rows) || 24));
+      state.ptys.get(id)?.resize(Math.max(20, Number(cols) || 80), Math.max(5, Number(rows) || 24));
     } catch {
       // el proceso pudo terminar
     }
@@ -950,7 +1001,7 @@ function registerIpc() {
     try {
       const { stdout, stderr } = await execAsync(command, {
         cwd: state.root,
-        shell: "/bin/bash",
+        shell: resolveShell(),
         timeout: 120000,
         maxBuffer: 16 * 1024 * 1024,
       });
@@ -968,82 +1019,12 @@ function registerIpc() {
 
 // --- menú -------------------------------------------------------------------
 
-function buildMenu() {
-  const action = (name) => () => send("menu:action", name);
-
-  const template = [
-    {
-      label: "Archivo",
-      submenu: [
-        { label: "Abrir carpeta…", accelerator: "CmdOrCtrl+O", click: action("open-project") },
-        { type: "separator" },
-        { label: "Guardar", accelerator: "CmdOrCtrl+S", click: action("save") },
-        {
-          label: "Actualizar vista",
-          accelerator: "F5",
-          click: action("compile"),
-        },
-        { type: "separator" },
-        { label: "Exportar PDF…", accelerator: "CmdOrCtrl+E", click: action("export-pdf") },
-        { label: "Exportar HTML…", click: action("export-html") },
-        { label: "Exportar Word (DOCX)…", click: action("export-docx") },
-        { type: "separator" },
-        { role: "quit", label: "Salir" },
-      ],
-    },
-    {
-      label: "Editar",
-      submenu: [
-        { role: "undo", label: "Deshacer" },
-        { role: "redo", label: "Rehacer" },
-        { type: "separator" },
-        { role: "cut", label: "Cortar" },
-        { role: "copy", label: "Copiar" },
-        { role: "paste", label: "Pegar" },
-        { role: "selectAll", label: "Seleccionar todo" },
-      ],
-    },
-    {
-      label: "Ver",
-      submenu: [
-        { label: "Código (Markdown)", accelerator: "CmdOrCtrl+1", click: action("view-code") },
-        { label: "Lectura", accelerator: "CmdOrCtrl+2", click: action("view-reading") },
-        { type: "separator" },
-        { label: "Tema claro/oscuro", accelerator: "CmdOrCtrl+Shift+L", click: action("toggle-theme") },
-        { type: "separator" },
-        { role: "zoomIn", label: "Acercar" },
-        { role: "zoomOut", label: "Alejar" },
-        { role: "resetZoom", label: "Zoom normal" },
-        { type: "separator" },
-        { role: "toggleDevTools", label: "Herramientas de desarrollo" },
-      ],
-    },
-    {
-      label: "Ayuda",
-      submenu: [
-        {
-          label: "Acerca de MDF",
-          click: () => {
-            dialog.showMessageBox(state.win, {
-              type: "info",
-              title: "MDF",
-              message: `MDF ${app.getVersion()}`,
-              detail:
-                "Editor de Markdown con vista A4 paginada, modo lectura y exportación a PDF, HTML y DOCX.",
-            });
-          },
-        },
-      ],
-    },
-  ];
-
-  Menu.setApplicationMenu(Menu.buildFromTemplate(template));
-}
-
 async function boot() {
   registerIpc();
   registerPageProtocol();
-  buildMenu();
+  // El menú vive en la barra superior HTML. En Windows/Linux no debe aparecer
+  // la barra nativa con Archivo/Editar/Ver/Ayuda.
+  Menu.setApplicationMenu(null);
 
   const settings = readSettings();
   const candidate =
@@ -1075,11 +1056,11 @@ if (!gotLock) {
 }
 
 app.on("window-all-closed", () => {
-  stopTerminal();
+  stopAllTerminals();
   if (process.platform !== "darwin") app.quit();
 });
 
-app.on("before-quit", stopTerminal);
+app.on("before-quit", stopAllTerminals);
 
 app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();

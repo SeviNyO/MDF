@@ -357,7 +357,7 @@ function renderFileStatus() {
 function applyTheme() {
   document.body.classList.toggle("dark", state.dark);
   editor.setDark(state.dark);
-  if (terminal) terminal.setDark(state.dark);
+  for (const session of terminalSessions.values()) session.terminal.setDark(state.dark);
   el("btnTheme").title = state.dark ? "Modo claro" : "Modo oscuro";
   el("btnTheme").setAttribute("aria-label", state.dark ? "Cambiar a modo claro" : "Cambiar a modo oscuro");
 }
@@ -386,10 +386,6 @@ function setZoom(value, persist = true) {
   state.zoom = Math.min(3, Math.max(0.4, Math.round(value * 100) / 100));
   applyZoom();
   if (persist) api.setPrefs({ zoom: state.zoom }).catch(() => {});
-}
-
-function setCompileInfo(text) {
-  el("compileInfo").textContent = text;
 }
 
 function updatePreviewSource() {
@@ -497,8 +493,6 @@ async function compileNow() {
   if (compiling) { compileQueued = true; return; }
   compiling = true;
   clearTimeout(state.compileTimer);
-  setCompileInfo("compilando…");
-  const started = performance.now();
 
   try {
     const result = await api.compile(state.file);
@@ -508,8 +502,6 @@ async function compileNow() {
       state.blocksCache = null;
       state.blocksTask = null;
       renderPages(result.pages);
-      const ms = Math.round(result.ms ?? performance.now() - started);
-      setCompileInfo(`${result.pages.length} páginas · ${ms} ms`);
       el("pageCount").textContent = `${result.pages.length} páginas`;
       updatePreviewSource();
       if (state.sidebarTab === "outline") refreshOutline();
@@ -521,7 +513,6 @@ async function compileNow() {
       if (!el("preview").children.length) {
         placeholderPages("Corrige el error para ver la vista paginada");
       }
-      setCompileInfo("error");
       setStatus("Error de compilación", "bad");
     }
   } catch (error) {
@@ -1684,7 +1675,6 @@ async function setDocumentMode(mode) {
     // pendiente, entramos igualmente con el contenido completo del capítulo.
     const saved = state.file ? await saveNow() : false;
     if (!saved) await refreshReading();
-    setCompileInfo("Modo Enfoque · sin paginación");
   } else {
     state.documentMode = "delivery";
     document.body.classList.remove("focus-mode");
@@ -1734,9 +1724,13 @@ async function openProject(info) {
   await refreshTree();
   if (state.sidebarTab === "outline") await refreshOutline();
 
-  if (terminal) {
-    await api.termRestart(terminal.term.cols, terminal.term.rows);
-    terminal.clear();
+  if (!terminalSessions.size) {
+    createTerminalSession().catch((error) => setStatus(String(error.message ?? error), "bad"));
+  } else {
+    for (const session of terminalSessions.values()) {
+      await api.termRestart(session.id, session.terminal.term.cols, session.terminal.term.rows);
+      session.terminal.clear();
+    }
   }
 
   const first = info.autoChapters && info.readme ? info.readme : info.chapters[0] ?? "";
@@ -1940,36 +1934,152 @@ async function refreshGit() {
   state.gitBehind = Number(/behind (\d+)/.exec(aheadBehind)?.[1] ?? 0);
   renderFileStatus();
 
-  el("statusBranch").textContent = `git: ${status.branch}`;
+  el("statusBranch").textContent = `branch: ${status.branch}`;
 }
 
 // --- terminal ---------------------------------------------------------------
 
-let terminal = null;
+const terminalSessions = new Map();
+let terminalSeq = 0;
+let activeTerminalId = null;
 
-async function ensureTerminal() {
-  if (terminal) return terminal;
-  terminal = createTerminal({
-    parent: el("terminal"),
-    onData: (data) => api.termInput(data),
-    onResize: (cols, rows) => api.termResize(cols, rows),
+function activeTerminal() {
+  return activeTerminalId ? terminalSessions.get(activeTerminalId) ?? null : null;
+}
+
+function fitTerminals() {
+  activeTerminal()?.terminal.fit();
+}
+
+function focusTerminal() {
+  const session = activeTerminal();
+  if (!session) return;
+  requestAnimationFrame(() => {
+    session.terminal.fit();
+    session.terminal.focus();
+  });
+}
+
+function setActiveTerminal(id) {
+  if (!terminalSessions.has(id)) return;
+  activeTerminalId = id;
+  document.body.classList.remove("bottom-collapsed");
+  el("bottomToggle").textContent = "▾";
+  for (const [sessionId, session] of terminalSessions) {
+    const active = sessionId === id;
+    session.pane.classList.toggle("active", active);
+    session.tab.classList.toggle("active", active);
+    session.tab.setAttribute("aria-selected", String(active));
+  }
+  focusTerminal();
+}
+
+function createTerminalTab(session) {
+  const tab = document.createElement("button");
+  tab.type = "button";
+  tab.className = "terminal-tab";
+  tab.dataset.terminalId = session.id;
+  tab.setAttribute("role", "tab");
+  tab.setAttribute("aria-selected", "false");
+  tab.setAttribute("aria-controls", `terminal-pane-${session.id}`);
+  tab.title = `Terminal ${session.index}`;
+
+  const label = document.createElement("span");
+  label.textContent = `Terminal ${session.index}`;
+  const close = document.createElement("span");
+  close.className = "terminal-tab-close";
+  close.textContent = "×";
+  close.title = "Cerrar terminal";
+  close.setAttribute("role", "button");
+  tab.append(label, close);
+
+  tab.addEventListener("click", (event) => {
+    if (event.target.closest(".terminal-tab-close")) {
+      event.stopPropagation();
+      closeTerminalSession(session.id);
+      return;
+    }
+    setActiveTerminal(session.id);
+  });
+  return tab;
+}
+
+async function createTerminalSession() {
+  const id = `term-${++terminalSeq}`;
+  const pane = document.createElement("div");
+  pane.className = "terminal-pane";
+  pane.id = `terminal-pane-${id}`;
+  pane.dataset.terminalId = id;
+  el("terminalHost").append(pane);
+
+  const terminal = createTerminal({
+    parent: pane,
+    onData: (data) => api.termInput(id, data),
+    onResize: (cols, rows) => api.termResize(id, cols, rows),
     onSelection: (text) => { api.copyText(text).catch(() => {}); },
   });
-  api.onTermData((data) => terminal.write(data));
-  api.onTermExit(() => terminal.write("\r\n[sesión terminada]\r\n"));
   terminal.setDark(state.dark);
-  await api.termStart(terminal.term.cols, terminal.term.rows);
+
+  const session = { id, index: terminalSeq, terminal, pane, tab: null };
+  session.tab = createTerminalTab(session);
+  el("terminalTabs").append(session.tab);
+  terminalSessions.set(id, session);
+  setActiveTerminal(id);
+
+  try {
+    const started = await api.termStart(id, terminal.term.cols, terminal.term.rows);
+    if (!started) throw new Error("Abre un proyecto para usar la terminal");
+  } catch (error) {
+    await closeTerminalSession(id);
+    throw error;
+  }
+  focusTerminal();
   return terminal;
 }
 
-el("terminal").addEventListener("mousedown", async (event) => {
-  if (event.button !== 0) return;
-  try {
-    const term = await ensureTerminal();
-    requestAnimationFrame(() => term.focus());
-  } catch (error) {
-    setStatus(String(error.message ?? error), "bad");
+async function closeTerminalSession(id) {
+  const session = terminalSessions.get(id);
+  if (!session) return;
+  await api.termClose(id).catch(() => {});
+  session.terminal.dispose();
+  session.pane.remove();
+  session.tab.remove();
+  terminalSessions.delete(id);
+
+  if (activeTerminalId === id) {
+    activeTerminalId = null;
+    const next = [...terminalSessions.keys()].at(-1);
+    if (next) setActiveTerminal(next);
   }
+}
+
+async function ensureTerminal() {
+  const session = activeTerminal();
+  if (session) {
+    setActiveTerminal(session.id);
+    return session.terminal;
+  }
+  const first = terminalSessions.values().next().value;
+  if (first) {
+    setActiveTerminal(first.id);
+    return first.terminal;
+  }
+  return createTerminalSession();
+}
+
+api.onTermData(({ id, data }) => {
+  terminalSessions.get(id)?.terminal.write(data);
+});
+
+api.onTermExit(({ id }) => {
+  terminalSessions.get(id)?.terminal.write("\r\n[sesión terminada]\r\n");
+});
+
+el("terminalHost").addEventListener("mousedown", (event) => {
+  if (event.button !== 0) return;
+  const pane = event.target.closest?.(".terminal-pane");
+  if (!pane) return;
+  setActiveTerminal(pane.dataset.terminalId);
 });
 
 const QUICK_KEY = "informe.quickCommands";
@@ -2001,9 +2111,13 @@ function renderQuickCommands() {
     node.textContent = item.label;
     node.title = item.command;
     node.addEventListener("click", async () => {
-      const term = await ensureTerminal();
-      api.termInput(`${item.command}\r`);
-      term.focus();
+      try {
+        const term = await ensureTerminal();
+        api.termInput(activeTerminalId, `${item.command}\r`);
+        term.focus();
+      } catch (error) {
+        setStatus(String(error.message ?? error), "bad");
+      }
     });
     box.append(node);
   }
@@ -2965,7 +3079,7 @@ el("btnPreviewOnly").addEventListener("click", () => {
   el("btnPreviewOnly").title = only ? "Mostrar editor" : "Solo vista previa";
   requestAnimationFrame(() => {
     applyZoom();
-    terminal?.fit();
+    fitTerminals();
   });
 });
 
@@ -3020,7 +3134,6 @@ async function exportPdf() {
     }
     state.lastPdf = result.output;
     setStatus(`PDF exportado: ${result.output} (${result.pages} páginas)`, "ok");
-    setCompileInfo(`${result.pages} páginas · ${result.ms} ms`);
   } catch (error) {
     setStatus(error.message, "bad");
   }
@@ -3083,6 +3196,13 @@ async function handleMenuAction(action) {
     else if (action === "view-code") await setViewMode("code");
     else if (action === "view-reading") await setViewMode("reading");
     else if (action === "toggle-theme") el("btnTheme").click();
+    else if (["undo", "redo", "cut", "copy", "paste", "select-all"].includes(action)) await api.edit(action);
+    else if (action === "zoom-in") setZoom(state.zoom + 0.1);
+    else if (action === "zoom-out") setZoom(state.zoom - 0.1);
+    else if (action === "zoom-reset") setZoom(1);
+    else if (action === "devtools") await api.toggleDevTools();
+    else if (action === "about") await api.about();
+    else if (action === "quit") await api.quit();
   } catch (error) {
     setStatus(String(error.message ?? error), "bad");
   }
@@ -3092,18 +3212,23 @@ api.onMenuAction(handleMenuAction);
 
 el("btnAppMenu").addEventListener("click", (event) => {
   event.stopPropagation();
-  el("appMenuList").classList.toggle("hidden");
+  const hidden = el("appMenuList").classList.toggle("hidden");
+  el("btnAppMenu").setAttribute("aria-expanded", String(!hidden));
 });
 
 document.querySelectorAll("[data-menu]").forEach((node) => {
   node.addEventListener("click", () => {
     el("appMenuList").classList.add("hidden");
+    el("btnAppMenu").setAttribute("aria-expanded", "false");
     handleMenuAction(node.dataset.menu);
   });
 });
 
 document.addEventListener("click", (event) => {
-  if (!event.target.closest(".app-menu")) el("appMenuList").classList.add("hidden");
+  if (!event.target.closest(".app-menu")) {
+    el("appMenuList").classList.add("hidden");
+    el("btnAppMenu").setAttribute("aria-expanded", "false");
+  }
 });
 
 el("btnOpenPdf").addEventListener("click", async () => {
@@ -3115,18 +3240,8 @@ el("btnOpenPdf").addEventListener("click", async () => {
   await api.openPath(target);
 });
 
-document.querySelectorAll(".tab[data-tab]").forEach((tab) => {
-  tab.addEventListener("click", () => {
-    document.querySelectorAll(".tab[data-tab]").forEach((other) => other.classList.remove("active"));
-    tab.classList.add("active");
-    el("tab-cmd").classList.remove("hidden");
-    document.body.classList.remove("bottom-collapsed");
-
-    ensureTerminal().then((term) => {
-      term.fit();
-      term.focus();
-    }).catch((error) => setStatus(String(error.message ?? error), "bad"));
-  });
+el("btnNewTerminal").addEventListener("click", () => {
+  createTerminalSession().catch((error) => setStatus(String(error.message ?? error), "bad"));
 });
 
 el("bottomToggle").addEventListener("click", async () => {
@@ -3134,9 +3249,8 @@ el("bottomToggle").addEventListener("click", async () => {
   el("bottomToggle").textContent = collapsed ? "▴" : "▾";
   if (!collapsed) {
     try {
-      const term = await ensureTerminal();
-      term.fit();
-      term.focus();
+      await ensureTerminal();
+      focusTerminal();
     } catch (error) {
       setStatus(String(error.message ?? error), "bad");
     }
@@ -3156,6 +3270,34 @@ document.addEventListener("keydown", (event) => {
     event.preventDefault();
     el("searchInput").focus();
     el("searchInput").select();
+  }
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "o") {
+    event.preventDefault();
+    openProjectDialog();
+  }
+  if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "e") {
+    event.preventDefault();
+    exportPdf();
+  }
+  if ((event.ctrlKey || event.metaKey) && event.key === "1") {
+    event.preventDefault();
+    setViewMode("code");
+  }
+  if ((event.ctrlKey || event.metaKey) && event.key === "2") {
+    event.preventDefault();
+    setViewMode("reading");
+  }
+  if ((event.ctrlKey || event.metaKey) && event.shiftKey && event.key.toLowerCase() === "l") {
+    event.preventDefault();
+    el("btnTheme").click();
+  }
+  if (event.key === "F5") {
+    event.preventDefault();
+    saveNow().then(compileNow);
+  }
+  if (event.key === "F12") {
+    event.preventDefault();
+    api.toggleDevTools();
   }
 });
 
@@ -3226,28 +3368,40 @@ const divider = el("divider");
 const editorPane = el("editorPane");
 
 divider.addEventListener("pointerdown", (event) => {
+  if (event.button !== 0) return;
   event.preventDefault();
   divider.setPointerCapture(event.pointerId);
+  document.body.classList.add("divider-resizing");
   const startX = event.clientX;
   const startWidth = editorPane.getBoundingClientRect().width;
 
   const onMove = (moveEvent) => {
-    const width = Math.max(340, Math.min(window.innerWidth - 420, startWidth + moveEvent.clientX - startX));
+    const sidebarWidth = state.sidebarCollapsed ? 0 : state.sidebarWidth;
+    const maxWidth = Math.max(340, window.innerWidth - sidebarWidth - 225);
+    const width = Math.max(340, Math.min(maxWidth, startWidth + moveEvent.clientX - startX));
+    // Solo cambia el ancho del editor; el workspace conserva su altura.
     editorPane.style.flex = `0 0 ${width}px`;
   };
 
-  const onUp = () => {
+  const finish = () => {
     divider.removeEventListener("pointermove", onMove);
-    divider.removeEventListener("pointerup", onUp);
+    divider.removeEventListener("pointerup", finish);
+    divider.removeEventListener("pointercancel", finish);
+    divider.removeEventListener("lostpointercapture", finish);
+    document.body.classList.remove("divider-resizing");
+    fitTerminals();
+    applyZoom();
   };
 
   divider.addEventListener("pointermove", onMove);
-  divider.addEventListener("pointerup", onUp);
+  divider.addEventListener("pointerup", finish);
+  divider.addEventListener("pointercancel", finish);
+  divider.addEventListener("lostpointercapture", finish);
 });
 
 window.addEventListener("resize", () => {
   if (!state.sidebarCollapsed) setSidebarWidth(state.sidebarWidth, false);
-  terminal?.fit();
+  fitTerminals();
   applyZoom();
 });
 
@@ -3282,7 +3436,6 @@ window.__editor = editor;
     } else {
       placeholderPages("Abre una carpeta o crea un archivo Markdown");
       setStatus("Sin proyecto abierto");
-      setCompileInfo("");
     }
   } catch (error) {
     setStatus(error.message, "bad");

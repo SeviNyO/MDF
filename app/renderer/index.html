@@ -14,8 +14,9 @@
         <span class="brand-name">MDF</span>
       </div>
       <div class="app-menu">
-        <button id="btnAppMenu" class="ghost" title="Menú de archivo">Archivo ▾</button>
-        <div id="appMenuList" class="export-menu hidden">
+        <button id="btnAppMenu" class="ghost app-menu-trigger" title="Menú" aria-label="Abrir menú" aria-expanded="false">=</button>
+        <div id="appMenuList" class="export-menu app-menu-list hidden">
+          <span class="menu-heading">Archivo</span>
           <button data-menu="open-project">Abrir carpeta…</button>
           <button data-menu="save">Guardar</button>
           <button data-menu="compile">Actualizar vista (F5)</button>
@@ -23,6 +24,28 @@
           <button data-menu="export-pdf">Exportar PDF…</button>
           <button data-menu="export-html">Exportar HTML…</button>
           <button data-menu="export-docx">Exportar Word…</button>
+          <div class="menu-sep"></div>
+          <button data-menu="quit">Salir</button>
+
+          <span class="menu-heading">Editar</span>
+          <button data-menu="undo">Deshacer</button>
+          <button data-menu="redo">Rehacer</button>
+          <button data-menu="cut">Cortar</button>
+          <button data-menu="copy">Copiar</button>
+          <button data-menu="paste">Pegar</button>
+          <button data-menu="select-all">Seleccionar todo</button>
+
+          <span class="menu-heading">Ver</span>
+          <button data-menu="view-code">Código (Ctrl+1)</button>
+          <button data-menu="view-reading">Lectura (Ctrl+2)</button>
+          <button data-menu="toggle-theme">Tema claro/oscuro</button>
+          <button data-menu="zoom-in">Acercar</button>
+          <button data-menu="zoom-out">Alejar</button>
+          <button data-menu="zoom-reset">Zoom normal</button>
+          <button data-menu="devtools">Herramientas de desarrollo</button>
+
+          <span class="menu-heading">Ayuda</span>
+          <button data-menu="about">Acerca de MDF</button>
         </div>
       </div>
       <div class="project" id="projectPath">sin proyecto</div>
@@ -165,7 +188,9 @@
 
     <section class="bottom" id="bottom">
       <div class="tabs">
-        <button data-tab="cmd" class="tab active">Terminal</button>
+        <span class="terminal-title">Terminal</span>
+        <div id="terminalTabs" class="terminal-tabs" role="tablist" aria-label="Terminales"></div>
+        <button id="btnNewTerminal" class="tab terminal-new" title="Nueva terminal" aria-label="Nueva terminal">+</button>
         <span class="spacer"></span>
         <button id="bottomToggle" class="tab ghost" title="Mostrar/ocultar panel">▾</button>
       </div>
@@ -175,7 +200,6 @@
           <div id="quickCommands" class="quick-commands"></div>
           <span class="spacer"></span>
           <button id="btnEditCommands" class="mini" title="Personalizar comandos rápidos">Editar</button>
-          <span class="hint">Terminal del proyecto</span>
         </div>
         <div id="quickEditor" class="quick-editor hidden">
           <textarea id="quickEditorText" spellcheck="false" placeholder="Nombre | comando&#10;git estado | git status --short"></textarea>
@@ -184,14 +208,13 @@
             <button id="btnCancelCommands" class="small">Cancelar</button>
           </div>
         </div>
-        <div id="terminal" class="terminal"></div>
+        <div id="terminalHost" class="terminal-host"></div>
       </div>
     </section>
 
     <footer class="statusbar">
       <span id="status">Listo</span>
       <span class="spacer"></span>
-      <span id="compileInfo" class="muted"></span>
       <span id="statusBranch" class="muted"></span>
     </footer>
 

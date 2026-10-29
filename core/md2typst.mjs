@@ -25,7 +25,7 @@ const processor = unified()
 
 // --- utilidades -------------------------------------------------------------
 
-const TYPST_SPECIAL = /([\\#*_$<>@\[\]~`])/g;
+const TYPST_SPECIAL = /([\\#*_$<>@\[\]~`\/])/g;
 
 /** Escapa texto plano para el marcado de Typst (sin tocar referencias). */
 function escapeText(text) {

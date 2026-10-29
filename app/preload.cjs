@@ -61,15 +61,21 @@ contextBridge.exposeInMainWorld("api", {
   formulaPreview: (latex, display) => ipcRenderer.invoke("formula:preview", latex, display),
 
   copyText: (text) => ipcRenderer.invoke("clipboard:write", text),
-  termStart: (cols, rows) => ipcRenderer.invoke("term:start", cols, rows),
-  termRestart: (cols, rows) => ipcRenderer.invoke("term:restart", cols, rows),
-  termInput: (data) => ipcRenderer.send("term:input", data),
-  termResize: (cols, rows) => ipcRenderer.send("term:resize", cols, rows),
+  edit: (action) => ipcRenderer.invoke("app:edit", action),
+  quit: () => ipcRenderer.invoke("app:quit"),
+  about: () => ipcRenderer.invoke("app:about"),
+  toggleDevTools: () => ipcRenderer.invoke("app:toggleDevTools"),
+
+  termStart: (id, cols, rows) => ipcRenderer.invoke("term:start", id, cols, rows),
+  termRestart: (id, cols, rows) => ipcRenderer.invoke("term:restart", id, cols, rows),
+  termClose: (id) => ipcRenderer.invoke("term:close", id),
+  termInput: (id, data) => ipcRenderer.send("term:input", id, data),
+  termResize: (id, cols, rows) => ipcRenderer.send("term:resize", id, cols, rows),
   onTermData: (callback) => {
-    ipcRenderer.on("term:data", (_event, data) => callback(data));
+    ipcRenderer.on("term:data", (_event, payload) => callback(payload));
   },
   onTermExit: (callback) => {
-    ipcRenderer.on("term:exit", () => callback());
+    ipcRenderer.on("term:exit", (_event, payload) => callback(payload));
   },
 
   onFsChanged: (callback) => {

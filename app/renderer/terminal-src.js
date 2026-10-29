@@ -91,5 +91,6 @@ export function createTerminal({ parent, onData, onResize, onSelection }) {
       term.options.theme = dark ? DARK_THEME : LIGHT_THEME;
     },
     fit: () => fit.fit(),
+    dispose: () => term.dispose(),
   };
 }

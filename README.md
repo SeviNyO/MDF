@@ -85,8 +85,8 @@ npm run watch        # recompila al guardar (CLI)
 - **Editor Markdown** con resaltado, plegado y búsqueda.
 - **Barra lateral con dos vistas**: **Archivos** (árbol) e **Índice** (texto exacto de los títulos y página; clic para saltar a la hoja y a la línea). Solo muestra los títulos escritos en tus `.md`. Se puede ocultar con la flecha del borde y ensanchar arrastrando ese mismo borde; el ancho y el estado se recuerdan.
 - **Explorador de archivos**: árbol con iconos por tipo, crear/eliminar archivos y carpetas, abrir la carpeta en el sistema y **agregar archivos desde el sistema** (botón de importar o arrastrándolos desde Dolphin/Nautilus). Las imágenes se abren con el editor al hacer clic.
-- **Estado de Git** en la barra inferior: rama actual y cambios pendientes. Las operaciones de Git se hacen desde la terminal del proyecto.
-- **Terminal real** del proyecto (`bash` con PTY y redimensionado) y **botones de git personalizables** (los editas como `nombre | comando`).
+- **Estado de Git** en la barra inferior: `branch` actual y cambios pendientes. Las operaciones de Git se hacen desde la terminal del proyecto.
+- **Terminal real** del proyecto (PTY con redimensionado), con **varias sesiones**: el título **Terminal** agrupa las pestañas, `+` crea una nueva y `×` la cierra. Incluye **botones de git personalizables** (los editas como `nombre | comando`).
 - **Modos Código y Lectura** (como Obsidian), con iconos junto al archivo: *Código* muestra el Markdown editable; *Lectura* lo renderiza (títulos, listas, tablas, imágenes y callouts) sin poder editar. El lápiz **Editar** vuelve al código; las tablas renderizadas tienen su propio botón **Editar tabla**. El botón **+** del editor abre un menú para insertar **ecuación**, **tabla**, **salto de página** o **nota/aviso**, sin salir del código.
 - **Estado junto al archivo**: `Guardado`, `Sin guardar`, `Sin commitear`, `Sin push` o `Sin pull`, según corresponda.
 - **Modo oscuro** (☾/☀) persistente, con contraste revisado en árbol, índice, tablas y diálogos.
@@ -100,10 +100,10 @@ npm run watch        # recompila al guardar (CLI)
 - **Doble clic en una tabla de Lectura** (GFM, `:::table` o HTML): abre el editor visual. **Doble clic en una imagen** o **clic derecho → Editar imagen…**: abre el mismo panel de URL, alt, ancho y alineación; el código guardado usa `<div align="…"><img …></div>`.
 - **Índice lateral**: muestra el texto de tus títulos (con la numeración que ya tengas escrita), sin añadir números automáticos.
 - **Numeración manual**: el PDF y el índice muestran los títulos tal como están escritos en el `.md`, sin prefijos calculados.
-- **Exportar** a PDF, HTML o Word (DOCX) desde el menú `Exportar ▾` o desde **Archivo**.
+- **Exportar** a PDF, HTML o Word (DOCX) desde el menú `=` o desde **Exportar ▾**.
 - Atajos: `Ctrl+O` abrir carpeta, `Ctrl+S` guardar, `Ctrl+1` Código, `Ctrl+2` Lectura, `F5` actualizar la vista.
 
-La compilación es **automática** al guardar: no hay que pulsar «Recompilar». Si quieres forzarla (por ejemplo tras cambiar el tema), usa **Archivo → Actualizar vista** (`F5`).
+La compilación es **automática** al guardar: no hay que pulsar «Recompilar». Si quieres forzarla (por ejemplo tras cambiar el tema), usa **= → Actualizar vista** (`F5`).
 
 ### Enfoque, Entrega y edición rápida
 
@@ -162,11 +162,12 @@ El modo se recuerda entre sesiones (`Ctrl+1` / `Ctrl+2`).
 
 ### Terminal
 
-La pestaña **Terminal** abre una shell real en la raíz del proyecto (PTY con `node-pty`),
+El título **Terminal** abre una shell real en la raíz del proyecto (PTY con `node-pty`),
 con historial, colores, redimensionado al tamaño del panel y los botones `git status`,
-`git log`, `ramas` y `remotos`. Haz clic en el panel o en la pestaña para iniciarla y
-poner el foco en ella. Funciona con tu `.bashrc` y tu prompt habitual.
-Al seleccionar texto con el ratón, se copia automáticamente al portapapeles.
+`git log`, `ramas` y `remotos`. El botón `+` crea otra terminal independiente y cada
+pestaña se puede cerrar con `×`. Funciona en Linux/macOS con tu shell habitual y en
+Windows con `cmd.exe`. Al seleccionar texto con el ratón, se copia automáticamente al
+portapapeles.
 
 Si `node-pty` no carga tras instalar, ejecuta `npm run native:rebuild` (lo hace `npm run app`).
 
@@ -381,8 +382,9 @@ npm run dist
 
 Genera en `release/`:
 
-- `MDF-0.2.0-x86_64.AppImage` (~158 MB)
-- `MDF-0.2.0-amd64.deb` (~125 MB)
+- `MDF-0.2.1-x86_64.AppImage` (~158 MB)
+- `MDF-0.2.1-amd64.deb` (~125 MB)
+- `MDF-0.2.1-x64-portable.exe` (Windows, ~122 MB)
 
 En Windows, desde PowerShell y con un `typst.exe` en `vendor/`:
 
