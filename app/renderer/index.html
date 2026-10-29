@@ -15,37 +15,45 @@
       </div>
       <div class="app-menu">
         <button id="btnAppMenu" class="ghost app-menu-trigger" title="Menú" aria-label="Abrir menú" aria-expanded="false">=</button>
-        <div id="appMenuList" class="export-menu app-menu-list hidden">
-          <span class="menu-heading">Archivo</span>
-          <button data-menu="open-project">Abrir carpeta…</button>
-          <button data-menu="save">Guardar</button>
-          <button data-menu="compile">Actualizar vista (F5)</button>
-          <div class="menu-sep"></div>
-          <button data-menu="export-pdf">Exportar PDF…</button>
-          <button data-menu="export-html">Exportar HTML…</button>
-          <button data-menu="export-docx">Exportar Word…</button>
-          <div class="menu-sep"></div>
-          <button data-menu="quit">Salir</button>
-
-          <span class="menu-heading">Editar</span>
-          <button data-menu="undo">Deshacer</button>
-          <button data-menu="redo">Rehacer</button>
-          <button data-menu="cut">Cortar</button>
-          <button data-menu="copy">Copiar</button>
-          <button data-menu="paste">Pegar</button>
-          <button data-menu="select-all">Seleccionar todo</button>
-
-          <span class="menu-heading">Ver</span>
-          <button data-menu="view-code">Código (Ctrl+1)</button>
-          <button data-menu="view-reading">Lectura (Ctrl+2)</button>
-          <button data-menu="toggle-theme">Tema claro/oscuro</button>
-          <button data-menu="zoom-in">Acercar</button>
-          <button data-menu="zoom-out">Alejar</button>
-          <button data-menu="zoom-reset">Zoom normal</button>
-          <button data-menu="devtools">Herramientas de desarrollo</button>
-
-          <span class="menu-heading">Ayuda</span>
-          <button data-menu="about">Acerca de MDF</button>
+        <div id="appMenuList" class="export-menu app-menu-list hidden" aria-label="Menú principal">
+          <details class="menu-section" open>
+            <summary>Archivo</summary>
+            <button data-menu="open-project">Abrir carpeta… <kbd>Ctrl+O</kbd></button>
+            <button data-menu="save">Guardar <kbd>Ctrl+S</kbd></button>
+            <button data-menu="compile">Actualizar vista <kbd>F5</kbd></button>
+            <div class="menu-sep"></div>
+            <button data-menu="export-pdf">Exportar PDF…</button>
+            <button data-menu="export-html">Exportar HTML…</button>
+            <button data-menu="export-docx">Exportar Word…</button>
+            <div class="menu-sep"></div>
+            <button data-menu="quit">Salir</button>
+          </details>
+          <details class="menu-section">
+            <summary>Editar</summary>
+            <button data-menu="undo">Deshacer</button>
+            <button data-menu="redo">Rehacer</button>
+            <div class="menu-sep"></div>
+            <button data-menu="cut">Cortar</button>
+            <button data-menu="copy">Copiar</button>
+            <button data-menu="paste">Pegar</button>
+            <button data-menu="select-all">Seleccionar todo</button>
+          </details>
+          <details class="menu-section">
+            <summary>Ver</summary>
+            <button data-menu="view-code">Código <kbd>Ctrl+1</kbd></button>
+            <button data-menu="view-reading">Lectura <kbd>Ctrl+2</kbd></button>
+            <button data-menu="toggle-theme">Tema claro/oscuro</button>
+            <div class="menu-sep"></div>
+            <button data-menu="zoom-in">Acercar</button>
+            <button data-menu="zoom-out">Alejar</button>
+            <button data-menu="zoom-reset">Zoom normal</button>
+            <div class="menu-sep"></div>
+            <button data-menu="devtools">Herramientas de desarrollo</button>
+          </details>
+          <details class="menu-section">
+            <summary>Ayuda</summary>
+            <button data-menu="about">Acerca de MDF</button>
+          </details>
         </div>
       </div>
       <div class="project" id="projectPath">sin proyecto</div>
@@ -191,6 +199,8 @@
         <span class="terminal-title">Terminal</span>
         <div id="terminalTabs" class="terminal-tabs" role="tablist" aria-label="Terminales"></div>
         <button id="btnNewTerminal" class="tab terminal-new" title="Nueva terminal" aria-label="Nueva terminal">+</button>
+        <label id="terminalShellLabel" class="terminal-shell-label hidden" for="terminalShellChoice">Shell</label>
+        <select id="terminalShellChoice" class="terminal-shell-choice hidden" aria-label="Shell para nuevas terminales" title="Se aplica a las terminales nuevas; las abiertas conservan su shell"></select>
         <span class="spacer"></span>
         <button id="bottomToggle" class="tab ghost" title="Mostrar/ocultar panel">▾</button>
       </div>

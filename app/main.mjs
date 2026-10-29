@@ -29,7 +29,7 @@ import { renderChapterHtml } from "../core/md2html.mjs";
 import { parsePdfWords } from "../core/pdf-words.mjs";
 import { copyImageToAssets } from "../core/image-assets.mjs";
 import { buildOutline } from "../core/outline.mjs";
-import { resolveShell } from "../core/shell.mjs";
+import { availableShells, resolveShell, selectShell } from "../core/shell.mjs";
 import { DEFAULT_DOCUMENT_THEME, listDocumentThemes, selectDocumentTheme, createDocumentTheme, deleteDocumentTheme, tableColors } from "../core/document-themes.mjs";
 
 const execAsync = promisify(exec);
@@ -69,7 +69,6 @@ const state = {
   dirty: false,
   watcher: null,
   ptys: new Map(),
-  termOpen: false,
 };
 
 // --- utilidades -------------------------------------------------------------
@@ -358,15 +357,16 @@ function stopAllTerminals() {
   for (const id of [...state.ptys.keys()]) stopTerminal(id);
 }
 
-function startTerminal(id, cols = 80, rows = 24) {
+function startTerminal(id, cols = 80, rows = 24, shellId) {
   if (!id) return false;
   stopTerminal(id);
   if (!state.root) return false;
 
-  const shellPath = resolveShell();
+  const selected = selectShell(shellId ?? readSettings().terminalShell);
+  const shellPath = selected.executable;
   let terminal;
   try {
-    terminal = pty.spawn(shellPath, [], {
+    terminal = pty.spawn(shellPath, selected.args, {
       name: "xterm-256color",
       cols: Math.max(20, Number(cols) || 80),
       rows: Math.max(5, Number(rows) || 24),
@@ -375,6 +375,7 @@ function startTerminal(id, cols = 80, rows = 24) {
         ...process.env,
         TERM: "xterm-256color",
         COLORTERM: "truecolor",
+        ...(selected.id === "git-bash" ? { MSYSTEM: "MINGW64", CHERE_INVOKING: "1" } : {}),
       },
     });
   } catch (error) {
@@ -798,12 +799,11 @@ function registerIpc() {
     }
   });
 
-  ipcMain.handle("term:start", (_event, id, cols, rows) => {
-    state.termOpen = true;
-    return startTerminal(id, cols, rows);
-  });
+  ipcMain.handle("term:shells", () => ({ platform: process.platform, shells: availableShells() }));
 
-  ipcMain.handle("term:restart", (_event, id, cols, rows) => startTerminal(id, cols, rows));
+  ipcMain.handle("term:start", (_event, id, cols, rows, shellId) => startTerminal(id, cols, rows, shellId));
+
+  ipcMain.handle("term:restart", (_event, id, cols, rows, shellId) => startTerminal(id, cols, rows, shellId));
 
   ipcMain.handle("term:close", (_event, id) => stopTerminal(id));
 
@@ -1001,7 +1001,7 @@ function registerIpc() {
     try {
       const { stdout, stderr } = await execAsync(command, {
         cwd: state.root,
-        shell: resolveShell(),
+        shell: resolveShell(process.platform, process.env, fs.existsSync, readSettings().terminalShell),
         timeout: 120000,
         maxBuffer: 16 * 1024 * 1024,
       });

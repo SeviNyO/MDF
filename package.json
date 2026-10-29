@@ -1,6 +1,6 @@
 {
   "name": "informe-md-pdf",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "private": true,
   "type": "module",
   "description": "Editor de Markdown paginado con vista A4 en vivo, Git, imágenes y tablas",

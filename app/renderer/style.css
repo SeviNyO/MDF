@@ -85,6 +85,10 @@ body.bottom-collapsed {
   letter-spacing: 0.2px;
 }
 
+body.platform-win32 .brand {
+  display: none;
+}
+
 .brand-mark {
   display: block;
   flex: 0 0 auto;
@@ -1457,6 +1461,29 @@ body.bottom-collapsed .tab-body {
   padding: 2px 8px;
   font-size: 16px;
   line-height: 1.2;
+}
+
+.terminal-shell-label {
+  color: var(--muted);
+  font-size: 11px;
+  margin-left: 8px;
+}
+
+.terminal-shell-choice {
+  max-width: 145px;
+  padding: 4px 22px 4px 7px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: var(--panel);
+  color: var(--ink);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.terminal-shell-choice:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
 }
 
 .terminal-host {
@@ -2989,7 +3016,7 @@ body.dark .placeholder-text {
   color: #9aa8b7;
 }
 
-/* ---------- menú Archivo del topbar ---------- */
+/* ---------- menú del topbar ---------- */
 
 .app-menu {
   position: relative;
@@ -2999,13 +3026,58 @@ body.dark .placeholder-text {
 .app-menu .export-menu {
   left: 0;
   right: auto;
-  min-width: 230px;
+  min-width: 258px;
 }
 
 .app-menu-list {
-  max-height: calc(100vh - 80px);
+  max-height: min(520px, calc(100vh - 80px));
   overflow-y: auto;
 }
+
+.app-menu-list .menu-section {
+  border-bottom: 1px solid var(--line);
+}
+
+.app-menu-list .menu-section:last-child {
+  border-bottom: 0;
+}
+
+.app-menu-list .menu-section summary {
+  padding: 10px 12px;
+  color: #2b3644;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.app-menu-list .menu-section summary::-webkit-details-marker { display: none; }
+.app-menu-list .menu-section summary::after { content: "▸"; color: var(--muted); }
+.app-menu-list .menu-section[open] summary::after { content: "▾"; }
+.app-menu-list .menu-section summary:hover { background: var(--soft); }
+.app-menu-list .menu-section summary:focus-visible,
+.app-menu-list button:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+
+.app-menu-list .menu-section button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 7px 12px 7px 20px;
+  border-top: 0;
+}
+
+.app-menu-list kbd {
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+body.dark .app-menu-list .menu-section summary { color: var(--text); }
 
 .app-menu .ghost {
   color: #e8eef6;
@@ -3023,20 +3095,6 @@ body.dark .placeholder-text {
   font-weight: 700;
   line-height: 1;
   letter-spacing: 0;
-}
-
-.menu-heading {
-  display: block;
-  padding: 7px 12px 3px;
-  color: #8d9bad;
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.7px;
-  text-transform: uppercase;
-}
-
-body.dark .menu-heading {
-  color: #93a1b1;
 }
 
 .menu-sep {

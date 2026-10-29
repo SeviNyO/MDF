@@ -24,6 +24,7 @@ import { imageMarkupHtml } from "../../core/image-markup.mjs";
 
 const api = window.api;
 const el = (id) => document.getElementById(id);
+document.body.classList.add(`platform-${api.platform}`);
 let lastMouseSelection = null;
 
 const state = {
@@ -1728,7 +1729,7 @@ async function openProject(info) {
     createTerminalSession().catch((error) => setStatus(String(error.message ?? error), "bad"));
   } else {
     for (const session of terminalSessions.values()) {
-      await api.termRestart(session.id, session.terminal.term.cols, session.terminal.term.rows);
+      await api.termRestart(session.id, session.terminal.term.cols, session.terminal.term.rows, session.shellId);
       session.terminal.clear();
     }
   }
@@ -1942,6 +1943,26 @@ async function refreshGit() {
 const terminalSessions = new Map();
 let terminalSeq = 0;
 let activeTerminalId = null;
+let terminalShells = [];
+let selectedTerminalShell = null;
+
+async function loadTerminalShells(prefs) {
+  if (api.platform !== "win32") return;
+  const result = await api.termShells();
+  terminalShells = result.shells;
+  const selector = el("terminalShellChoice");
+  selector.replaceChildren();
+  if (!terminalShells.some(({ id }) => id === "git-bash")) {
+    const missing = new Option("Git Bash (no instalado)", "git-bash");
+    missing.disabled = true;
+    selector.add(missing);
+  }
+  for (const entry of terminalShells) selector.add(new Option(entry.label, entry.id));
+  selectedTerminalShell = terminalShells.find(({ id }) => id === prefs.terminalShell)?.id ?? terminalShells[0].id;
+  selector.value = selectedTerminalShell;
+  el("terminalShellLabel").classList.remove("hidden");
+  selector.classList.remove("hidden");
+}
 
 function activeTerminal() {
   return activeTerminalId ? terminalSessions.get(activeTerminalId) ?? null : null;
@@ -1982,10 +2003,11 @@ function createTerminalTab(session) {
   tab.setAttribute("role", "tab");
   tab.setAttribute("aria-selected", "false");
   tab.setAttribute("aria-controls", `terminal-pane-${session.id}`);
-  tab.title = `Terminal ${session.index}`;
+  const title = session.shellLabel ? `${session.shellLabel} ${session.index}` : `Terminal ${session.index}`;
+  tab.title = title;
 
   const label = document.createElement("span");
-  label.textContent = `Terminal ${session.index}`;
+  label.textContent = title;
   const close = document.createElement("span");
   close.className = "terminal-tab-close";
   close.textContent = "×";
@@ -2004,7 +2026,7 @@ function createTerminalTab(session) {
   return tab;
 }
 
-async function createTerminalSession() {
+async function createTerminalSession(shellId = selectedTerminalShell) {
   const id = `term-${++terminalSeq}`;
   const pane = document.createElement("div");
   pane.className = "terminal-pane";
@@ -2020,14 +2042,18 @@ async function createTerminalSession() {
   });
   terminal.setDark(state.dark);
 
-  const session = { id, index: terminalSeq, terminal, pane, tab: null };
+  const session = {
+    id, index: terminalSeq, terminal, pane, tab: null,
+    shellId,
+    shellLabel: terminalShells.find(({ id: candidate }) => candidate === shellId)?.label,
+  };
   session.tab = createTerminalTab(session);
   el("terminalTabs").append(session.tab);
   terminalSessions.set(id, session);
   setActiveTerminal(id);
 
   try {
-    const started = await api.termStart(id, terminal.term.cols, terminal.term.rows);
+    const started = await api.termStart(id, terminal.term.cols, terminal.term.rows, shellId);
     if (!started) throw new Error("Abre un proyecto para usar la terminal");
   } catch (error) {
     await closeTerminalSession(id);
@@ -3210,6 +3236,20 @@ async function handleMenuAction(action) {
 
 api.onMenuAction(handleMenuAction);
 
+function closeAppMenu() {
+  el("appMenuList").classList.add("hidden");
+  el("btnAppMenu").setAttribute("aria-expanded", "false");
+}
+
+document.querySelectorAll("#appMenuList .menu-section").forEach((section) => {
+  section.addEventListener("toggle", () => {
+    if (!section.open) return;
+    document.querySelectorAll("#appMenuList .menu-section").forEach((other) => {
+      if (other !== section) other.open = false;
+    });
+  });
+});
+
 el("btnAppMenu").addEventListener("click", (event) => {
   event.stopPropagation();
   const hidden = el("appMenuList").classList.toggle("hidden");
@@ -3218,16 +3258,19 @@ el("btnAppMenu").addEventListener("click", (event) => {
 
 document.querySelectorAll("[data-menu]").forEach((node) => {
   node.addEventListener("click", () => {
-    el("appMenuList").classList.add("hidden");
-    el("btnAppMenu").setAttribute("aria-expanded", "false");
+    closeAppMenu();
     handleMenuAction(node.dataset.menu);
   });
 });
 
 document.addEventListener("click", (event) => {
-  if (!event.target.closest(".app-menu")) {
-    el("appMenuList").classList.add("hidden");
-    el("btnAppMenu").setAttribute("aria-expanded", "false");
+  if (!event.target.closest(".app-menu")) closeAppMenu();
+});
+
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape" && !el("appMenuList").classList.contains("hidden")) {
+    closeAppMenu();
+    el("btnAppMenu").focus();
   }
 });
 
@@ -3242,6 +3285,16 @@ el("btnOpenPdf").addEventListener("click", async () => {
 
 el("btnNewTerminal").addEventListener("click", () => {
   createTerminalSession().catch((error) => setStatus(String(error.message ?? error), "bad"));
+});
+
+el("terminalShellChoice").addEventListener("change", async (event) => {
+  selectedTerminalShell = event.target.value;
+  try {
+    await api.setPrefs({ terminalShell: selectedTerminalShell });
+    setStatus(`Nuevas terminales: ${terminalShells.find(({ id }) => id === selectedTerminalShell)?.label}`, "ok");
+  } catch (error) {
+    setStatus(String(error.message ?? error), "bad");
+  }
 });
 
 el("bottomToggle").addEventListener("click", async () => {
@@ -3411,6 +3464,7 @@ window.__editor = editor;
 
 (async () => {
   const prefs = await api.getPrefs().catch(() => ({}));
+  await loadTerminalShells(prefs).catch((error) => setStatus(String(error.message ?? error), "bad"));
   // El tema oscuro es el predeterminado; una elección explícita local prevalece.
   if (Array.isArray(prefs.quickCommands) && prefs.quickCommands.length) {
     quickCommands = prefs.quickCommands;

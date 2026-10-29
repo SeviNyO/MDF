@@ -7,6 +7,7 @@ const { contextBridge, ipcRenderer, webUtils } = require("electron");
 contextBridge.exposeInMainWorld("api", {
   getPrefs: () => ipcRenderer.invoke("prefs:get"),
   setPrefs: (patch) => ipcRenderer.invoke("prefs:set", patch),
+  platform: process.platform,
 
   openProject: () => ipcRenderer.invoke("project:open"),
   info: () => ipcRenderer.invoke("project:info"),
@@ -66,8 +67,9 @@ contextBridge.exposeInMainWorld("api", {
   about: () => ipcRenderer.invoke("app:about"),
   toggleDevTools: () => ipcRenderer.invoke("app:toggleDevTools"),
 
-  termStart: (id, cols, rows) => ipcRenderer.invoke("term:start", id, cols, rows),
-  termRestart: (id, cols, rows) => ipcRenderer.invoke("term:restart", id, cols, rows),
+  termShells: () => ipcRenderer.invoke("term:shells"),
+  termStart: (id, cols, rows, shellId) => ipcRenderer.invoke("term:start", id, cols, rows, shellId),
+  termRestart: (id, cols, rows, shellId) => ipcRenderer.invoke("term:restart", id, cols, rows, shellId),
   termClose: (id) => ipcRenderer.invoke("term:close", id),
   termInput: (id, data) => ipcRenderer.send("term:input", id, data),
   termResize: (id, cols, rows) => ipcRenderer.send("term:resize", id, cols, rows),

@@ -30,6 +30,8 @@ jobs:
 
       - run: npm ci
 
+      - run: node --test tests/terminal-shell.test.mjs
+
       - run: npm run editor:bundle
 
       - run: npm run native:rebuild
