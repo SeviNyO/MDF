@@ -1,0 +1,93 @@
+name: Build
+
+on:
+  workflow_dispatch:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            platform: linux
+          - os: windows-latest
+            platform: win
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run editor:bundle
+
+      - run: npm run native:rebuild
+
+      - name: Download Typst (Linux)
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          mkdir -p vendor
+          curl -L \
+            "https://github.com/typst/typst/releases/download/v0.15.1/typst-x86_64-unknown-linux-musl.tar.xz" \
+            -o "$RUNNER_TEMP/typst.tar.xz"
+          tar -xJf "$RUNNER_TEMP/typst.tar.xz" -C "$RUNNER_TEMP"
+          install -m 755 "$RUNNER_TEMP/typst-x86_64-unknown-linux-musl/typst" vendor/typst
+
+      - name: Download Typst (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force vendor | Out-Null
+          Invoke-WebRequest `
+            "https://github.com/typst/typst/releases/download/v0.15.1/typst-x86_64-pc-windows-msvc.zip" `
+            -OutFile "$env:TEMP\typst.zip"
+          Expand-Archive "$env:TEMP\typst.zip" -DestinationPath "$env:TEMP\typst" -Force
+          Copy-Item "$env:TEMP\typst\typst-x86_64-pc-windows-msvc\typst.exe" "vendor\typst.exe" -Force
+
+      - name: Build ${{ matrix.platform }}
+        run: npx electron-builder --${{ matrix.platform }} --x64 --publish never
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MDF-${{ matrix.platform }}
+          if-no-files-found: error
+          path: |
+            release/*.AppImage
+            release/*.deb
+            release/*.exe
+
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: release
+          merge-multiple: true
+
+      - name: Publish GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1 \
+            || gh release create "$GITHUB_REF_NAME" \
+              --repo "$GITHUB_REPOSITORY" \
+              --title "MDF $GITHUB_REF_NAME" \
+              --generate-notes \
+              --verify-tag
+          gh release upload "$GITHUB_REF_NAME" release/* \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber

@@ -1,0 +1,4 @@
+*.png binary
+*.pdf -diff
+*.otf binary
+*.ttf binary

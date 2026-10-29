@@ -1,0 +1,29 @@
+# ============================================================================
+#  Metadatos del documento. Todo lo que la app necesita para reconstruir el
+#  PDF vive en el repo: este archivo + manuscript/ + theme/ + assets/.
+# ============================================================================
+
+title: "Sistema de gestión académica con Markdown paginado"
+subtitle: "Informe de avance — Arquitectura, resultados y conclusiones"
+authors:
+  - "Pau Ríos"
+course: "1ACC0238 — Taller de Proyecto de Software"
+institution: "Universidad Peruana de Ciencias Aplicadas"
+date: "Octubre 2026"
+lang: es
+
+page:
+  size: a4
+  top: 26          # mm
+  bottom: 24
+  left: 25
+  right: 25
+  fontsize: 10.5   # pt
+
+output: informe.pdf
+
+# Orden de capítulos: el PDF se arma en este orden.
+chapters:
+  - manuscript/01-introduccion.md
+  - manuscript/02-desarrollo.md
+  - manuscript/03-conclusiones.md
