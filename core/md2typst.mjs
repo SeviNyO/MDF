@@ -212,29 +212,33 @@ function uniqueId(candidate, ctx) {
 
 // --- emisión ----------------------------------------------------------------
 
-function emitInline(nodes, ctx) {
-  return nodes.map((n) => emitInlineNode(n, ctx)).join("");
+function emitInline(nodes, ctx, inCell = false) {
+  return nodes.map((n) => emitInlineNode(n, ctx, inCell)).join("");
 }
 
-function emitInlineNode(node, ctx) {
+function emitInlineNode(node, ctx, inCell = false) {
   switch (node.type) {
     case "text":
-      return emitText(node.value);
+      return inCell ? escapeCell(node.value) : emitText(node.value);
 
     case "strong":
-      return `#strong[${emitInline(node.children, ctx)}]`;
+      return `#strong[${emitInline(node.children, ctx, inCell)}]`;
 
     case "emphasis":
-      return `#emph[${emitInline(node.children, ctx)}]`;
+      return `#emph[${emitInline(node.children, ctx, inCell)}]`;
 
     case "delete":
-      return `#strike[${emitInline(node.children, ctx)}]`;
+      return `#strike[${emitInline(node.children, ctx, inCell)}]`;
 
     case "inlineCode":
-      return `#raw("${escapeString(node.value)}")`;
+      // Typst no parte el código en línea dentro de una columna. Se usa texto
+      // monoespaciado con puntos de corte invisibles para que nunca desborde.
+      return inCell
+        ? `#text(font: "JetBrains Mono", size: 0.9em)[${escapeCell(node.value, true)}]`
+        : `#raw("${escapeString(node.value)}")`;
 
     case "link":
-      return `#link("${escapeString(node.url)}")[${emitInline(node.children, ctx)}]`;
+      return `#link("${escapeString(node.url)}")[${emitInline(node.children, ctx, inCell)}]`;
 
     case "image": {
       const src = ctx.resolveImage ? ctx.resolveImage(node.url) : node.url;
@@ -271,13 +275,13 @@ function emitInlineNode(node, ctx) {
 
     case "textDirective": {
       if (/^[a-z]{2}(-[a-z]{2,4})?$/i.test(node.name)) {
-        return `#text(lang: "${node.name.toLowerCase()}")[${emitInline(node.children, ctx)}]`;
+        return `#text(lang: "${node.name.toLowerCase()}")[${emitInline(node.children, ctx, inCell)}]`;
       }
-      return `:${node.name}${emitInline(node.children, ctx)}`;
+      return `:${node.name}${emitInline(node.children, ctx, inCell)}`;
     }
 
     case "linkReference":
-      return emitInline(node.children, ctx);
+      return emitInline(node.children, ctx, inCell);
 
     default:
       return "";
@@ -408,14 +412,54 @@ function stripHtml(value) {
   );
 }
 
-function escapeCell(text) {
+function escapeCell(text, force = false) {
   // Typst no corta identificadores largos por defecto; puntos de corte
   // invisibles mantienen el texto dentro de su columna, también en el PDF.
-  return escapeText(breakLongCellWords(text)).replace(/\n/g, " #linebreak() ");
+  return escapeText(breakLongCellWords(text, force)).replace(/\n/g, " #linebreak() ");
 }
 
-function breakLongCellWords(text) {
-  return String(text).replace(/[^\s]{22,}/gu, (word) => word.replace(/(.{18})(?=.)/gu, "$1\u200b"));
+const CELL_BREAK = "\u200b";
+const CELL_SEGMENTER = typeof Intl?.Segmenter === "function"
+  ? new Intl.Segmenter("es", { granularity: "grapheme" })
+  : null;
+const CELL_HARD_CHARS = /[^\p{L}\p{M}-]/u;
+const CELL_VOWELS = /[aeiouáéíóúüAEIOUÁÉÍÓÚÜ]/u;
+
+/** ¿La palabra no se parte sola con la separación silábica de Typst? */
+function isHardCellWord(word) {
+  if (word.length < 12) return false;
+  if (CELL_HARD_CHARS.test(word)) return true; // URLs, código, rutas, signos
+  if (!CELL_VOWELS.test(word)) return true; // siglas, ruido
+  if (/\p{Lu}.*\p{Lu}/u.test(word)) return true; // MAYÚSCULAS
+  if (/\p{Ll}\p{Lu}/u.test(word)) return true; // camelCase
+  if (/(.)\1{3,}/u.test(word)) return true; // repeticiones largas
+  return word.length >= 24; // palabras fuera de diccionario
+}
+
+/** Añade puntos de corte tras signos y cada `step` grafemas. */
+function addCellBreakPoints(word, step) {
+  const segments = CELL_SEGMENTER
+    ? [...CELL_SEGMENTER.segment(word)].map((part) => part.segment)
+    : [...word];
+  let out = "";
+  let run = 0;
+  for (const segment of segments) {
+    out += segment;
+    run += 1;
+    if (/[\p{P}\p{S}]/u.test(segment) || run >= step) {
+      out += CELL_BREAK;
+      run = 0;
+    }
+  }
+  return out;
+}
+
+function breakLongCellWords(text, force = false) {
+  return String(text).replace(/\S+/gu, (word) => {
+    if (!force && !isHardCellWord(word)) return word;
+    if (word.length < (force ? 8 : 12)) return word;
+    return addCellBreakPoints(word, force ? 4 : 8);
+  });
 }
 
 function htmlAttr(tag, name) {
@@ -443,7 +487,11 @@ function emitHtmlText(html, inCell = false) {
       const text = escape(stripHtml(match[3]));
       if (/^(strong|b)$/i.test(match[1])) result += `*${text}*`;
       else if (/^(em|i)$/i.test(match[1])) result += `_${text}_`;
-      else if (match[1].toLowerCase() === "code") result += `#raw("${escapeString(stripHtml(match[3]))}")`;
+      else if (match[1].toLowerCase() === "code") {
+        result += inCell
+          ? `#text(font: "JetBrains Mono", size: 0.9em)[${escapeCell(stripHtml(match[3]), true)}]`
+          : `#raw("${escapeString(stripHtml(match[3]))}")`;
+      }
       else {
         const href = htmlAttr(`<a ${match[2]}>`, "href");
         result += /^(https?:\/\/|mailto:|#)/i.test(href) ? `#link("${escapeString(href)}")[${text}]` : text;
@@ -647,10 +695,8 @@ function emitTable(node, attrs, ctx) {
       if (merge?.rowspan > 1) options.push(`rowspan: ${merge.rowspan}`);
       if (alignment && alignment !== "left") options.push(`align: ${alignment}`);
 
-      const cellNodes = cell.children.map((node) => node.type === "text"
-        ? { ...node, value: breakLongCellWords(node.value) } : node);
-      const body = `[${cellNodes.map((node) => node.type === "html" && /^<img\b/i.test(node.value.trim())
-        ? emitHtmlImage(node.value, ctx, true) : emitInlineNode(node, ctx)).join("")}]`;
+      const body = `[${cell.children.map((node) => node.type === "html" && /^<img\b/i.test(node.value.trim())
+        ? emitHtmlImage(node.value, ctx, true) : emitInlineNode(node, ctx, true)).join("")}]`;
       cells.push(options.length ? `table.cell(${options.join(", ")})${body}` : body);
     });
     return cells.join(", ");

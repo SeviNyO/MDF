@@ -13,7 +13,9 @@ export function parsePdfWords(xml) {
     const fragment = part[0];
     if (fragment.startsWith("<page")) { page += 1; continue; }
     const read = (name) => Number(new RegExp(`\\b${name}="([\\d.]+)"`).exec(fragment)?.[1]);
-    const text = decode(fragment.replace(/^<word\b[^>]*>/i, "").replace(/<\/word>$/i, "")).trim();
+    const text = decode(fragment.replace(/^<word\b[^>]*>/i, "").replace(/<\/word>$/i, ""))
+      .replace(/\u200b/g, "")
+      .trim();
     const [x1, y1, x2, y2] = ["xMin", "yMin", "xMax", "yMax"].map(read);
     if (text && [x1, y1, x2, y2].every(Number.isFinite)) words.push({ page, text, x1, y1, x2, y2 });
   }
